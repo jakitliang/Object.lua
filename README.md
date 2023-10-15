@@ -97,11 +97,31 @@ print(d.proto == Base)       -- Will print "true"
 
 #### 1.2 Extend (Mixin)
 
-Mixin help you to reuse code between objects like `C++` template.
+Mixin help you to reuse code between objects like `C++` template or `Java` interface.
 
 ```lua
---- @param object another object to clone its method
-Object:extends = function (object)
+local Interface = Object()
+
+function Interface:onClick()
+  print('Interface:onClick')
+end
+
+local Control = Object()
+function Control:click()
+  self:onClick()
+end
+
+local Window = Object(Control)
+Window:extends(Interface)
+
+local Button = Object(Control)
+Button:extends(Interface)
+
+local w = Window()
+w:click()
+
+local b = Button()
+b:click()
 ```
 
 ### 2. Initializers
