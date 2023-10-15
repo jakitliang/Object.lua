@@ -209,6 +209,12 @@ function ObjectMetatable.__concat(op1, op2)
   return __concat and __concat(op1, op2)
 end
 
+function ObjectMetatable.__pairs(self)
+  local __pairs = ObjectMetatable.__index(self, '__pairs', true)
+
+  return __pairs and __pairs(self)
+end
+
 function ObjectMetatable:__tostring()
   local proto = rawget(self, '__proto')
   local __tostring = nil
