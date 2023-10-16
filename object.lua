@@ -59,7 +59,10 @@ function Object:extends(object)
 end
 
 --- Clone the object
-function Object:clone()
+--- @generic T
+--- @param self T
+--- @return T
+function Object.clone(self)
   local object = {}
 
   for k, v in pairs(self) do
@@ -209,10 +212,15 @@ function ObjectMetatable.__concat(op1, op2)
   return __concat and __concat(op1, op2)
 end
 
-function ObjectMetatable.__pairs(self)
-  local __pairs = ObjectMetatable.__index(self, '__pairs', true)
+local function __pairs(self, k)
+  local v
+  -- Implement your own key,value selection logic in place of next
+  k, v = next(self, k)
+  if v then return k, v end
+end
 
-  return __pairs and __pairs(self)
+function ObjectMetatable.__pairs(self)
+  return ObjectMetatable.__index(self, '__pairs', true) or __pairs, self, nil
 end
 
 function ObjectMetatable:__tostring()
