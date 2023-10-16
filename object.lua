@@ -212,15 +212,8 @@ function ObjectMetatable.__concat(op1, op2)
   return __concat and __concat(op1, op2)
 end
 
-local function __pairs(self, k)
-  local v
-  -- Implement your own key,value selection logic in place of next
-  k, v = next(self, k)
-  if v then return k, v end
-end
-
 function ObjectMetatable.__pairs(self)
-  return ObjectMetatable.__index(self, '__pairs', true) or __pairs, self, nil
+  return ObjectMetatable.__index(self, '__pairs', true) or next, self, nil
 end
 
 function ObjectMetatable:__tostring()
