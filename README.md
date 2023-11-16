@@ -60,62 +60,88 @@ Then let's check `b` is a `Base`.
 
 And check `d` is a `Derived` and also has ancestor `Base`.
 
+**Practice 1.**
+
 ```lua
-local Base = Object()
+local object = require('object')
+local Base = {}
+Base = object(Derived):class()
 
--- Tips:
--- You can also do like this
---
--- local Base = {}
--- Object(Base)
---
--- or
---
--- local Base = Object({})
+local b = object(Base):new()
 
-local b = Base()
-
-print(b:instanceOf(Base))
-print(b.proto == Base)
+print(object(b):is(Base))  -- Will print "true"
 
 -- Make Derived inherit from Base
-local Derived = Object(Base)
+local Derived = {}
+Derived = object(Derived):class(Base)
 
--- Tips:
--- You can also do like this
---
--- local Derived = {}
--- Object(Base, Derived)
+local d = object(Derived):new()
 
-local d = Derived()
-
-print(d:instanceOf(Derived)) -- Will print "true"
-print(d.proto == Derived)    -- Will print "true"
-print(d:instanceOf(Base))    -- Will print "true"
-print(d.proto == Base)       -- Will print "true"
+print(object(d):is(Derived)) -- Will print "true"
+print(object(d):is(Base))    -- Will print "true"
 ```
 
-#### 1.2 Extend (Mixin)
+**Practice 2.**
+
+```lua
+local object = require('object')
+local Base = object({}):class()
+
+local b = object(Base):new()
+
+print(object(b):is(Base))  -- Will print "true"
+
+-- Make Derived inherit from Base
+local Derived = object({}):class(Base)
+
+local d = object(Derived):new()
+
+print(object(d):is(Derived)) -- Will print "true"
+print(object(d):is(Base))    -- Will print "true"
+```
+
+**Practice 3.**
+
+```lua
+local object = require('object')
+local new, class, is = object.new, object.class, object.is
+
+local Base = class({})
+
+local b = new(Base)
+
+print(is(b, Base))  -- Will print "true"
+
+-- Make Derived inherit from Base
+local Derived = class({}, Base)
+
+local d = new(Derived)
+
+print(is(d, Derived)) -- Will print "true"
+print(is(d, Base))    -- Will print "true"
+```
+
+#### 1.2 Mixin
 
 Mixin help you to reuse code between objects like `C++` template or `Java` interface.
 
 ```lua
-local Interface = Object()
+local Interface = {}
 
 function Interface:onClick()
   print('Interface:onClick')
 end
 
-local Control = Object()
+local Control = {}
 function Control:click()
   self:onClick()
 end
 
-local Window = Object(Control)
-Window:extends(Interface)
+local Window = object({}):class(Control) -- Inherit from Control
+object(Window):mixin(Interface) -- Mixin interface
 
-local Button = Object(Control)
-Button:extends(Interface)
+local Button = object({}):class(Control)
+object(Button):mixin(Interface) -- Mixin interface
 
 local w = Window()
 w:click()
@@ -124,14 +150,111 @@ local b = Button()
 b:click()
 ```
 
+#### 1.3 Cast
+
+Cast can help you work without `inheritance`.
+
+```lua
+local Control = {}
+function Control:click()
+  self:onClick()
+end
+
+local Window = object({}):class() -- No inheritance
+function Window:onClick()
+  print('Window:onClick')
+end
+
+local Button = object({}):class() -- No inheritance
+function Button:onClick()
+  print('Button:onClick')
+end
+
+object(Window):cast(Control):click() -- Print Window:onClick
+object(Button):cast(Control):click() -- Print Button:onClick
+
+local components = {Window, Button}
+
+for i=1,#components do
+  object(components[i]):cast(Control):click() -- Print Window:onClick and Button:onClick
+end
+```
+
+#### 1.4 Check respond (Reflection)
+
+Check if an object have the specified method
+
+```lua
+local Base = {attribute = 123}
+
+function Base.method() end
+
+print(object(Base):respondTo('method')) -- True
+print(object(Base):respondTo('attribute')) -- False, attribute is not a function
+print(object(Base):respondTo('empty')) -- False, function `empty` doesn't exists
+```
+
+#### 1.5 Reflection call
+
+Check if an object have the specified method
+
+```lua
+local Base = {attribute = 123}
+
+function Base.staticMethod()
+  print('Base.staticMethod')
+end
+
+function Base:method()
+  print('Base:method')
+end
+
+if object(Base):respondTo('staticMethod') then
+  object(Base):send('staticMethod')
+end
+
+if object(Base):respondTo('method') then
+  object(Base):send('method', Base) -- Member function should pass `self` into param
+end
+```
+
+#### 1.5 Weak tables
+
+> Be careful to use this feature.
+
+Weak tables can automatically GC the member.
+
+```lua
+local Base = {attribute = 123}
+
+object(Base):setWeak('kv')
+
+do
+  for i=1,10 do
+    local v = {x = i}
+    Base[v] = v
+  end
+end
+
+print('Memory usage', collectgarbage('count'), 'Bytes')
+
+collectgarbage('collect') -- GC
+
+print('Memory usage', collectgarbage('count'), 'Bytes')
+```
+
 ### 2. Initializers
 
 ```lua
-local Base = Object()
+local Base = object({}):class()
 
-function Base:new()
+function Base:init()
   self.name = 'Base'
 end
+
+local b = object(Base):new()
+
+print(b.name) -- Print `Base`
 ```
 
 ### 3. Operator overloading
@@ -141,7 +264,7 @@ Something like C++ and Ruby. Coders can customizes the Lua operators for operand
 Such like using `def +(obj)` in Ruby and `T operator+(T const& obj)` in C++.
 
 ```lua
-local Base = {}
+local Base = object({}):class()
 
 function Base:new( n )
   self.n = n
@@ -151,10 +274,10 @@ function Base:__add(op1, op2)
   return op1.n + op2.n
 end
 
-local b1 = Base(100)
+local b1 = object(Base):new(100)
 print("b1.n =", b1.n) -- 100
 
-local b2 = Base(200)
+local b2 = object(Base):new(200)
 print("b2.n =", b2.n) -- 200
 
 local b3 = b1 + b2
@@ -164,12 +287,12 @@ print("b3.n =", b3.n) -- 300
 This `__add` also effects on `Derived` objects:
 
 ```lua
-local Derived = Object(Base)
+local Derived = object({}):class(Base)
 
-local d1 = Base(100)
+local d1 = object(Derived):new(100)
 print("d1.n =", d1.n) -- 100
 
-local d2 = Base(200)
+local d2 = object(Derived):new(200)
 print("d2.n =", d2.n) -- 200
 
 local d3 = d1 + d2
@@ -190,7 +313,7 @@ Now `Object.lua` can support 5 Operators to be overloaded:
 --- @param lhs any Left number
 --- @param rhs any Right number
 --- @return any Result to return
-function add(lhs, rhs)
+function __add(lhs, rhs)
 end
 ```
 
@@ -200,7 +323,7 @@ end
 --- @param lhs any Left number
 --- @param rhs any Right number
 --- @return any Result to return
-function sub(lhs, rhs)
+function __sub(lhs, rhs)
 end
 ```
 
@@ -210,7 +333,7 @@ end
 --- @param lhs any Left number
 --- @param rhs any Right number
 --- @return any Result to return
-function mul(lhs, rhs)
+function __mul(lhs, rhs)
 end
 ```
 
@@ -220,7 +343,7 @@ end
 --- @param lhs any Left number
 --- @param rhs any Right number
 --- @return any Result to return
-function div(lhs, rhs)
+function __div(lhs, rhs)
 end
 ```
 
@@ -232,7 +355,7 @@ Concat interface is implemented for concat some string like objects.
 --- @param str1 any Left number
 --- @param str2 any Right number
 --- @return any Result to return
-function concat(str1, str2)
+function __concat(str1, str2)
 end
 ```
 
@@ -241,18 +364,29 @@ end
 Without getter and setter, you can't get private member defined in closure.
 
 ```lua
-local Base = Object()
-local BaseProperty = {n = 100}
+local Base = object({}):class()
 
-function Base:getN( ... )
-  return BaseProperty.n
+local function getN(self)
+  return self.__n
 end
 
-function Base:setN( n )
-  BaseProperty.n = n
+local function setN(self, n)
+  self.__n = n
 end
 
-local b1 = Base()
+function Base:__index( t, k )
+  if k == 'n' then
+    return getN(t)
+  end
+end
+
+function Base:__newindex( t, k, v )
+  if k == 'n' then
+    setN(t, v)
+  end
+end
+
+local b1 = object(Base):new()
 print("b1.n =", b1.n) -- Will print "b1.n = 100"
 b1.n = 1024
 print("b1.n =", b1.n) -- Will print "b1.n = 1024"
@@ -263,9 +397,10 @@ Getter and setter are bind to `get` + **camel cased** value name `N` like `getN`
 ### 5. Clone objects
 
 ```lua
-local b1 = Base()
+local b1 = object(Base):new()
+b1.value = 123
 
-local b2 = b1:clone() -- Clone the object and have same prototype of Base
+local b2 = object(b1):clone() -- Clone the object and have same prototype of Base
 ```
 
 ### 6. Method Caching
@@ -274,7 +409,7 @@ You can test method call performance by this sample code: \
 (The sample below is disabled method caching)
 
 ```lua
-local Base = Object()
+local Base = object({}):class()
 function Base:test()
   return 'Base:test'
 end
@@ -286,7 +421,7 @@ local arr = {}
 -- Base <- object <- object <- object ...
 
 for i = 1, 20 do
-  local object = Object(Last)
+  local object = object({}):class(Last)
   table.insert(arr, object)
   Last = object
 end
@@ -313,13 +448,7 @@ Now lets enable the method caching feature:
 -- ... codes before
 
 -- Add this line
-Object:setMethodCache(true) -- Enable method caching
-
-for i = 1, 20 do
-  local object = Object(Last)
-  table.insert(arr, object)
-  Last = object
-end
+object.setMethodCache(true) -- Enable method caching
 
 -- Do call
 -- arr[1] -> Base:test()

@@ -58,62 +58,88 @@ Lua 社区中有很多 OO 模块。
 
 并检查“d”是“Derived”并且还有祖先“Base”。
 
+**练习 1.**
+
 ```lua
-local Base = Object()
+local object = require('object')
+local Base = {}
+Base = object(Derived):class()
 
--- Tips:
--- 你也可以这么写
---
--- local Base = {}
--- Object(Base)
---
--- 或者这么写
---
--- local Base = Object({})
+local b = object(Base):new()
 
-local b = Base()
-
-print(b:instanceOf(Base))
-print(b.proto == Base)
+print(object(b):is(Base))  -- Will print "true"
 
 -- Make Derived inherit from Base
-local Derived = Object(Base)
+local Derived = {}
+Derived = object(Derived):class(Base)
 
--- Tips:
--- 你也可以这么写
---
--- local Derived = {}
--- Object(Base, Derived)
+local d = object(Derived):new()
 
-local d = Derived()
-
-print(d:instanceOf(Derived)) -- print "true"
-print(d.proto == Derived)    -- print "true"
-print(d:instanceOf(Base))    -- print "true"
-print(d.proto == Base)       -- print "true"
+print(object(d):is(Derived)) -- Will print "true"
+print(object(d):is(Base))    -- Will print "true"
 ```
 
-#### 1.2 扩展 (Mixin)
-
-Mixin 帮助您在“C++”模板或“Java”接口等对象之间重用代码
+**练习 2.**
 
 ```lua
-local Interface = Object()
+local object = require('object')
+local Base = object({}):class()
+
+local b = object(Base):new()
+
+print(object(b):is(Base))  -- Will print "true"
+
+-- Make Derived inherit from Base
+local Derived = object({}):class(Base)
+
+local d = object(Derived):new()
+
+print(object(d):is(Derived)) -- Will print "true"
+print(object(d):is(Base))    -- Will print "true"
+```
+
+**练习 3.**
+
+```lua
+local object = require('object')
+local new, class, is = object.new, object.class, object.is
+
+local Base = class({})
+
+local b = new(Base)
+
+print(is(b, Base))  -- Will print "true"
+
+-- Make Derived inherit from Base
+local Derived = class({}, Base)
+
+local d = new(Derived)
+
+print(is(d, Derived)) -- Will print "true"
+print(is(d, Base))    -- Will print "true"
+```
+
+#### 1.2 混入 Mixin
+
+Mixin 帮助您在“C++”模板或“Java”接口等对象之间重用代码，非继承
+
+```lua
+local Interface = {}
 
 function Interface:onClick()
   print('Interface:onClick')
 end
 
-local Control = Object()
+local Control = {}
 function Control:click()
   self:onClick()
 end
 
-local Window = Object(Control)
-Window:extends(Interface)
+local Window = object({}):class(Control) -- 继承 Control
+object(Window):mixin(Interface) -- 混入接口 Interface
 
-local Button = Object(Control)
-Button:extends(Interface)
+local Button = object({}):class(Control)
+object(Button):mixin(Interface) -- 混入接口 Interface
 
 local w = Window()
 w:click()
@@ -122,14 +148,117 @@ local b = Button()
 b:click()
 ```
 
+#### 1.3 类型转换
+
+有了类型转换，有时候就不需要写继承了呢
+
+```lua
+local Control = {}
+function Control:click()
+  self:onClick()
+end
+
+local Window = object({}):class() -- 没有继承关系
+function Window:onClick()
+  print('Window:onClick')
+end
+
+local Button = object({}):class() -- 没有继承关系
+function Button:onClick()
+  print('Button:onClick')
+end
+
+object(Window):cast(Control):click() -- Print Window:onClick
+object(Button):cast(Control):click() -- Print Button:onClick
+
+-- 把插件放进组件堆里，一起批量点击
+
+local components = {Window, Button}
+
+for i=1,#components do
+  object(components[i]):cast(Control):click() -- Print Window:onClick and Button:onClick
+end
+```
+
+#### 1.4 自省 (反射)
+
+确认一个对象是否具有某个函数
+
+```lua
+local Base = {attribute = 123}
+
+function Base.method() end
+
+print(object(Base):respondTo('method')) -- True
+print(object(Base):respondTo('attribute')) -- False, attribute 不是个函数方法啦，只是个属性变量
+print(object(Base):respondTo('empty')) -- False, 没找到 `empty` 函数方法
+```
+
+#### 1.5 反射调用
+
+确认一个对象是否具有某个方法并调用它
+
+面向对象（物件导向）的理论概念，就是“向对象发送方法”
+
+```lua
+local Base = {attribute = 123}
+
+function Base.staticMethod() -- 静态函数
+  print('Base.staticMethod')
+end
+
+function Base:method() -- 成员方法
+  print('Base:method')
+end
+
+if object(Base):respondTo('staticMethod') then
+  object(Base):send('staticMethod')
+end
+
+if object(Base):respondTo('method') then
+  object(Base):send('method', Base) -- 成员函数需要带个 `self`，这里 Base 就是 self
+end
+```
+
+#### 1.5 弱表
+
+> 小心使用这个特性.
+
+弱表就是会自动回收成员了啦，让你体验一边用这个对象，一边它内部的成员会随 GC 自动消失，慎用！
+
+主要是某种很独特的场景可能用得到，一般用不到。
+
+```lua
+local Base = {attribute = 123}
+
+object(Base):setWeak('kv')
+
+do
+  for i=1,10 do
+    local v = {x = i}
+    Base[v] = v
+  end
+end
+
+print('Memory usage', collectgarbage('count'), 'Bytes')
+
+collectgarbage('collect') -- GC
+
+print('Memory usage', collectgarbage('count'), 'Bytes')
+```
+
 ### 2. 构造函数
 
 ```lua
-local Base = Object()
+local Base = object({}):class()
 
-function Base:new()
+function Base:init()
   self.name = 'Base'
 end
+
+local b = object(Base):new()
+
+print(b.name) -- Print `Base`
 ```
 
 ### 3. 符号重载
@@ -141,7 +270,7 @@ end
 接下来我告诉你 Object.lua 怎么用这个：
 
 ```lua
-local Base = {}
+local Base = object({}):class()
 
 function Base:new( n )
   self.n = n
@@ -151,10 +280,10 @@ function Base:__add(op1, op2)
   return op1.n + op2.n
 end
 
-local b1 = Base(100)
+local b1 = object(Base):new(100)
 print("b1.n =", b1.n) -- 100
 
-local b2 = Base(200)
+local b2 = object(Base):new(200)
 print("b2.n =", b2.n) -- 200
 
 local b3 = b1 + b2
@@ -164,12 +293,12 @@ print("b3.n =", b3.n) -- 300
 这个 `__add` 也可以被继承哦！比如下面的 `Derived` 对象:
 
 ```lua
-local Derived = Object(Base)
+local Derived = object({}):class(Base)
 
-local d1 = Base(100)
+local d1 = object(Derived):new(100)
 print("d1.n =", d1.n) -- 100
 
-local d2 = Base(200)
+local d2 = object(Derived):new(200)
 print("d2.n =", d2.n) -- 200
 
 local d3 = d1 + d2
@@ -241,58 +370,41 @@ end
 如果没有 getter 和 setter，就无法在闭包中定义私有成员。
 
 ```lua
-local Base = Object()
-local BaseProperty = {n = 100}
+local Base = object({}):class()
 
-function Base:getN( ... )
-  return BaseProperty.n
+local function getN(self)
+  return self.__n
 end
 
-function Base:setN( n )
-  BaseProperty.n = n
+local function setN(self, n)
+  self.__n = n
 end
 
-local b1 = Base()
-print("b1.n =", b1.n) -- print "b1.n = 100"
-b1.n = 1024
-print("b1.n =", b1.n) -- print "b1.n = 1024"
-```
-
-#### 说明
-
-> 一般情况 直接设置公开属性就完了，不要写 getter setter，一般写 getter setter 都是特殊目的的！
-
-Getter 跟 Setter 是绑定到 `get` + **首字母大写** 的属性名称 `N` 比如 `getN`
-
-假如属性 名称是 `n` 那就是 `getN`
-
-* 用户写 object.value 等同于 调用了 object:getValue()
-* 用户写 object.value = value 等同于调用了 object:setValue(value)
-
-好处是，萌新不需要学习和实现 `__index` 方法了
-
-写 getter setter 是为了 限制用户 设置某些值的时候，做一下 **判断、过滤、转换**
-
-比如：
-
-```lua
-function Base:setN(n)
-  if type(n) ~= 'number' then
-    -- 拦截 不是 数字类型的属性 设置进去
-    return
+function Base:__index( t, k )
+  if k == 'n' then
+    return getN(t)
   end
-
-  -- 是数值 number 类型才能设置
-  self.n = n
 end
+
+function Base:__newindex( t, k, v )
+  if k == 'n' then
+    setN(t, v)
+  end
+end
+
+local b1 = object(Base):new()
+print("b1.n =", b1.n) -- Will print "b1.n = 100"
+b1.n = 1024
+print("b1.n =", b1.n) -- Will print "b1.n = 1024"
 ```
 
 ### 5. 克隆对象
 
 ```lua
-local b1 = Base()
+local b1 = object(Base):new()
+b1.value = 123
 
-local b2 = b1:clone() -- 克隆对象并具有相同的 Base 原型
+local b2 = object(b1):clone() -- Clone the object and have same prototype of Base
 ```
 
 ### 6. 方法缓存
@@ -301,7 +413,7 @@ local b2 = b1:clone() -- 克隆对象并具有相同的 Base 原型
 （下面的示例，没有开启方法缓存，所以比较慢）
 
 ```lua
-local Base = Object()
+local Base = object({}):class()
 function Base:test()
   return 'Base:test'
 end
@@ -309,16 +421,16 @@ end
 local Last = Base
 local arr = {}
 
--- 提供了 20 级继承层次结构并存储到数组
+-- This gives 20 level inheritance hierachy and store to an array
 -- Base <- object <- object <- object ...
 
 for i = 1, 20 do
-  local object = Object(Last)
+  local object = object({}):class(Last)
   table.insert(arr, object)
   Last = object
 end
 
--- 跑 1百万次
+-- Do call
 -- arr[1] -> Base:test()
 -- arr[2] -> object:test() -> Base:test()
 -- ...
@@ -342,15 +454,9 @@ P.S. 其它 OO 库还不一定能达到 这个水平呢。
 -- ... 前面的代码
 
 -- 加一行在这里
-Object:setMethodCache(true) -- 启动方法缓存！
+object.setMethodCache(true) -- 启动方法缓存！
 
-for i = 1, 20 do
-  local object = Object(Last)
-  table.insert(arr, object)
-  Last = object
-end
-
--- 调用
+-- Do call
 -- arr[1] -> Base:test()
 -- arr[2] -> object:test() -> Base:test()
 -- ...

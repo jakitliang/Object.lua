@@ -5,51 +5,263 @@
 --- @date 2023-10-12
 --- @license MIT
 
---- <b>Create new object and inherit from prototype:</b> <br>
---- 1. Object() # Create new object <br>
---- 2. Object({...}) # Init as object with table {...} already exists <br>
---- 3. Object(proto); # Create object and inherit from proto <br>
---- 4. Object(proto, {...}); # Create object with table {...} and inherit from proto
---- @class Object
---- @overload fun(proto: table|Object|function, table: table|function|Object):any
---- @overload fun(proto: table|function|Object):any
---- @overload fun(table: table):any
---- @overload fun():any
-local Object = {}
+local __cache = false
+local DefaultObjectName = 'table'
+local STRING = 'string'
+local TABLE = 'table'
+local FUNCTION = 'function'
+local INDEX, NEW_INDEX = '__index', '__newindex'
+local READ_ACCESSOR, WRITE_ACCESSOR = INDEX, NEW_INDEX
+local MODE_ACCESSOR, CALL_ACCESSOR, PAIRS_ACCESSOR = '__mode', '__call', '__pairs'
+local STRING_ACCESSOR, NAME_ACCESSOR = '__tostring', '__name'
+local ADD_ACCESSOR, SUB_ACCESSOR, MUL_ACCESSOR, DIV_ACCESSOR = '__add', '__sub', '__mul', '__div'
+local CONCAT_ACCESSOR, CONSTRUCT_ACCESSOR, NIL_ACCESSOR = '__concat', 'new', nil
 
---- Constructor of the object
-function Object:new()
-  -- fallback call
-end
+local function __index(t, k, accessor)
+  local proto, ret = t, nil
 
---- Check whether the object is prototype of the specified one
-function Object:instanceOf(proto)
-  local __proto = rawget(self, '__proto')
+  if accessor then
+    while proto do
+      ret = rawget(proto, accessor)
 
-  while __proto do
-    if __proto == proto then
-      return true
+      if ret ~= nil then
+        return ret
+      end
+
+      proto = getmetatable(proto)
     end
 
-    __proto = rawget(__proto, '__proto')
+    return
   end
 
-  return false
+  accessor = READ_ACCESSOR
+
+  while proto do
+    ret = rawget(proto, k)
+
+    if ret ~= nil then
+      if __cache and type(ret) == FUNCTION and not rawget(t, k) then
+        rawset(t, k, ret)
+      end
+
+      return ret
+    end
+
+    ret = rawget(proto, accessor)
+
+    if ret ~= nil then
+      ret = ret(t, k)
+
+      if ret ~= nil then
+        return ret
+      end
+    end
+
+    proto = getmetatable(proto)
+  end
 end
 
-function Object:getProto()
-  return rawget(self, '__proto')
+local function __newindex(t, k, v)
+  local accessor = __index(t, nil, WRITE_ACCESSOR)
+
+  if accessor then
+    accessor(t, k, v)
+    return
+  end
+
+  rawset(t, k, v)
 end
 
---- Extends the methods from another object
-function Object:extends(object)
+local function __send(t, accessor, ...)
+  local method = __index(t, nil, accessor)
+  return method and method(...) or nil
+end
+
+local function __call(self, ...)
+  return __send(self, CALL_ACCESSOR, self, ...)
+end
+
+local function __add(op1, op2)
+  return __send(op1, ADD_ACCESSOR, op1, op2)
+end
+
+local function __sub(op1, op2)
+  return __send(op1, SUB_ACCESSOR, op1, op2)
+end
+
+local function __mul(op1, op2)
+  return __send(op1, MUL_ACCESSOR, op1, op2)
+end
+
+local function __div(op1, op2)
+  return __send(op1, DIV_ACCESSOR, op1, op2)
+end
+
+local function __concat(op1, op2)
+  return __send(op1, CONCAT_ACCESSOR, op1, op2)
+end
+
+local function __pairs(self)
+  return __index(self, nil, PAIRS_ACCESSOR) or next, self, nil
+end
+
+local function __tostring(self)
+  local __tostring = __index(self, nil, STRING_ACCESSOR) or DefaultObjectName
+
+  if type(__tostring) == 'function' then
+    return __tostring(self)
+  end
+
+  return string.format('%s: %p', __tostring, self)
+end
+
+local function fallback(...) error('object is a static module') end
+
+--- @generic T1, T2
+--- @param proto T1
+--- @param extend T2
+--- @return T1|T2
+local function extends(proto, extend)
+  --- @type metatable
+  local metatable = {
+    __index = __index,
+    __newindex = __newindex,
+    __call = __call,
+    __add = __add,
+    __sub = __sub,
+    __mul = __mul,
+    __div = __div,
+    __concat = __concat,
+    __pairs = __pairs,
+    __tostring = __tostring,
+    __metatable = extend or false
+  }
+  rawset(proto, '__metatable', metatable)
+  return setmetatable(proto, metatable)
+end
+
+local function getArgs(func)
+  local args = {}
+  for i = 1, debug.getinfo(func).nparams, 1 do
+    --- @diagnostic disable-next-line: param-type-mismatch
+    table.insert(args, debug.getlocal(func, i))
+  end
+  return args
+end
+
+local function getAttributes(object, info)
   for k, v in pairs(object) do
-    if string.find(k, '__') or k == 'new' then
+    local t = type(rawget(object, k))
+
+    if k == '__metatable' then
+      goto continue
+    end
+
+    if t == 'function' then
+      table.insert(info, '@field ' .. k .. ' ' .. 'fun(' .. table.concat(getArgs(v), ", ") .. ')')
+
+    else
+      table.insert(info, '@field ' .. k .. ' ' .. t)
+    end
+
+    ::continue::
+  end
+
+  return info
+end
+
+--- <b>Object.lua </b> <br/>
+--- <i>Enjoy Objective Coding!</i> <br/>
+--- Version: 3.0
+--- @class object
+local object, Object
+
+--- @generic T
+--- @param self T
+--- @return T
+local function checkSelf(self)
+  if getmetatable(self) == Object then
+    return rawget(self, '__self') or error(string.format('Illegal param %s', self))
+  end
+
+  if self == object then
+    fallback()
+  end
+
+  if type(self) ~= TABLE then
+    error(string.format('object must be <table> but given <%s>', type(self)))
+  end
+
+  return self
+end
+
+--- @generic T
+--- @param self T
+--- @return T
+local function checkProto(self)
+  if getmetatable(self) == Object then
+    return rawget(self, '__proto') or error(string.format('Illegal param %s', self))
+  end
+
+  if type(self) ~= TABLE then
+    error(string.format('object must be <table> but given <%s>', type(self)))
+  end
+
+  return self
+end
+
+--- Create new table from object
+--- @generic T
+--- @param self T
+--- @return T
+local function new(self, ...)
+  self = extends({}, checkSelf(self))
+  local accessor = __index(self, nil, CONSTRUCT_ACCESSOR)
+  if accessor then
+    accessor(self, ...)
+  end
+
+  return self
+end
+
+--- Declare object or table as class and return class table
+--- @generic T1, T2
+--- @param self T1
+--- @param extend? T2
+--- @return T1|T2|{} table Table
+local function class(self, extend)
+  return extends(checkSelf(self), extend)
+end
+
+--- Call method with parameters
+--- @return any result
+local function send(self, k, ...)
+  local method = checkSelf(self)[k]
+  if type(method) == 'function' then
+    return method(...)
+  end
+end
+
+--- Check if object have method
+local function respondTo(self, k)
+  return type(checkProto(self)[k]) == 'function'
+end
+
+--- Mix the methods from extend table into self
+--- @generic T1, T2
+--- @param self T1 The object it self
+--- @param extend T2 Another object to mix
+--- @return T1|T2 table Table
+local function mixin(self, extend)
+  self = checkSelf(self)
+
+  for k, v in pairs(extend) do
+    if string.find(k, '__') or k == 'new' or k == 'init' then
       goto continue
     end
 
     if not self[k] then
-      rawset(self, k, rawget(object, k))
+      rawset(self, k, rawget(extend, k))
     end
 
     ::continue::
@@ -60,188 +272,177 @@ end
 
 --- Clone the object
 --- @generic T
---- @param self T
---- @return T
-function Object.clone(self)
-  local object = {}
+--- @param self T The object it self
+--- @return T table Table
+local function clone(self)
+  self = checkSelf(self)
+
+  local mirror = {}
 
   for k, v in pairs(self) do
-    rawset(object, k, v)
+    rawset(mirror, k, v)
   end
 
-  return setmetatable(object, getmetatable(self))
+  return extends(mirror, getmetatable(self))
 end
 
-local ObjectMetatable = {__cache = false}
+--- Check whether the object is prototype of the specified one
+--- @param self any The object it self
+--- @param extend any The prototype of the object
+--- @return boolean boolean Check result
+local function is(self, extend)
+  self = checkSelf(self)
 
-function ObjectMetatable.__index(self, key, check)
-  if self == Object then
-    -- not found
-    return nil
+  while self do
+    if self == extend then
+      return true
+    end
+
+    self = getmetatable(self)
   end
 
-  check = not check and type(key) == 'string' and 'get' .. key:sub(1, 1):upper() .. key:sub(2)
-  local proto = self
-  local __index, get, ret = nil, nil, nil
-  local __cache = ObjectMetatable.__cache
-
-  while proto do
-    __index = rawget(proto, '__index')
-
-    if __index then
-      if __cache then
-        rawset(self, '__index', __index)
-      end
-
-      ret = __index(self, key)
-
-      if ret then
-        break
-      end
-    end
-
-    ret = rawget(proto, key)
-
-    if ret then
-      if __cache and type(ret) == 'function' then
-        rawset(self, key, ret)
-      end
-
-      break
-    end
-
-    get = check and rawget(proto, check)
-
-    if get then
-      if __cache then
-        rawset(self, check, get)
-      end
-
-      return get(self)
-    end
-
-    proto = rawget(proto, '__proto')
-  end
-
-  return ret
+  return false
 end
 
-function ObjectMetatable.__call(self, ...)
-  if self == Object then
-    local proto, object = ...
-
-    if proto then
-      if not rawget(proto, '__proto') then
-        proto, object = Object, proto
-      end
-
-      object = object or {}
-      --- @diagnostic disable-next-line: param-type-mismatch
-      rawset(object, '__proto', proto)
-      --- @diagnostic disable-next-line: param-type-mismatch
-      setmetatable(object, ObjectMetatable)
-      return object
-    end
+--- Set object table to weak mode
+--- @generic T
+--- @param self T The object it self
+--- @param mode 'k'|'v'|'kv'
+local function setWeak(self, mode)
+  local metatable = rawget(checkSelf(self), '__metatable')
+  if metatable then
+    rawset(metatable, '__mode', mode)
+    return true
   end
-
-  local constructor = self.new
-  local object = {__proto = self}
-
-  setmetatable(object, ObjectMetatable)
-  constructor(object, ...)
-  return object
+  return false
 end
 
-function ObjectMetatable.__newindex(self, key, value)
-  if self == Object then
-    -- do not edit Object it self
+--- Print object or table description
+--- @generic T
+--- @param self T The object it self
+--- @param name string
+--- @return nil
+local function description(self, name, extend)
+  self = checkSelf(self)
+
+  name = "@class " .. name
+  if extend then
+    name = name .. ' : ' .. extend
+  end
+
+  local info = {name}
+  getAttributes(self, info)
+
+  for i = 1, #info do
+    print(string.format('--- %s', info[i]))
+  end
+end
+
+--- Set method cache to improve performance
+--- @param mode boolean If to enable the cache
+local function setMethodCache(mode)
+  if mode then
+    __cache = true
     return
   end
 
-  local check = type(key) == 'string' and 'set' .. key:sub(1, 1):upper() .. key:sub(2)
-  local proto = self
-  local __newindex, set, ret = nil, nil, nil
-  local __cache = ObjectMetatable.__cache
+  __cache = false
+end
 
-  while proto do
-    __newindex = rawget(proto, '__newindex')
+object = {
+  new = new,
+  class = class,
+  send = send,
+  respondTo = respondTo,
+  mixin = mixin,
+  clone = clone,
+  is = is,
+  setWeak = setWeak,
+  description = description,
+  setMethodCache = setMethodCache
+}
 
-    if __newindex then
-      return __newindex(self, key, value)
-    end
+Object = {
+  --- Create new table from object
+  --- @generic T
+  --- @type fun(self:{proto:T}, ...):T
+  new = new,
+  --- Declare object or table as class and return class table
+  --- @generic T1, T2
+  --- @type fun(self:{proto:T1}, extend?:T2):T1|T2
+  class = class,
+  send = send,
+  respondTo = respondTo,
+  --- Mix the methods from extend table into self
+  --- @generic T1, T2
+  --- @type fun(self:{proto:T1}, extend:T2):T1|T2
+  mixin = mixin,
+  --- Clone the object
+  --- @generic T
+  --- @type fun(self:{proto:T}):T
+  clone = clone,
+  is = is,
+  setWeak = setWeak,
+  description = description
+}
 
-    set = check and rawget(proto, check)
-
-    if set then
-      return set(self, value)
-    end
-
-    proto = rawget(proto, '__proto')
+--- Cast object to class type
+--- @generic T1, T2
+--- @param self T1
+--- @param proto T2
+--- @return T2|self
+function Object:cast(proto)
+  if getmetatable(self) ~= Object then
+    error('casting only support <object>')
+    return nil
   end
 
-  rawset(self, key, value)
+  return rawset(self, '__proto', proto)
 end
 
-function ObjectMetatable.__add(op1, op2)
-  local __add = ObjectMetatable.__index(op1, '__add', true)
-
-  return __add and __add(op1, op2)
-end
-
-function ObjectMetatable.__sub(op1, op2)
-  local __sub = ObjectMetatable.__index(op1, '__sub', true)
-
-  return __sub and __sub(op1, op2)
-end
-
-function ObjectMetatable.__mul(op1, op2)
-  local __mul = ObjectMetatable.__index(op1, '__mul', true)
-
-  return __mul and __mul(op1, op2)
-end
-
-function ObjectMetatable.__div(op1, op2)
-  local __div = ObjectMetatable.__index(op1, '__div', true)
-
-  return __div and __div(op1, op2)
-end
-
-function ObjectMetatable.__concat(op1, op2)
-  local __concat = ObjectMetatable.__index(op1, '__concat', true)
-
-  return __concat and __concat(op1, op2)
-end
-
-function ObjectMetatable.__pairs(self)
-  return ObjectMetatable.__index(self, '__pairs', true) or next, self, nil
-end
-
-function ObjectMetatable:__tostring()
-  local proto = rawget(self, '__proto')
-  local __tostring = nil
-
-  while proto do
-    __tostring = rawget(proto, '__tostring')
-
-    if __tostring then
-      return __tostring(self)
-    end
-
-    proto = rawget(proto, '__proto')
+rawset(Object, '__index', function (t, k)
+  if k == 'proto' then
+    return rawget(t, '__proto')
   end
 
-  return string.format('Object: %p', self)
-end
+  return rawget(rawget(t, '__self'), k) or __index(rawget(t, '__proto'), k) or Object[k]
+end)
+rawset(Object, '__newindex', function (t, k, v)
+  local accessor = __index(rawget(t, '__proto'), nil, '__newindex')
+  t = rawget(t, '__self')
 
-function Object:setMethodCache(mode)
-  if mode then
-    rawset(ObjectMetatable, '__cache', true)
+  if accessor then
+    accessor(t, k, v)
+    return
   end
 
-  rawset(ObjectMetatable, '__cache', false)
-end
+  rawset(t, k, v)
+end)
 
---- @diagnostic disable-next-line: param-type-mismatch
-setmetatable(Object, ObjectMetatable)
+setmetatable(Object, {
+  __newindex = fallback
+})
 
-return Object
+object = (
+  --- @generic self, class, T
+  --- @param self self
+  --- @param class class
+  --- @return self|fun(proto: T):(class|T|{proto:T})
+  function (self, class, call)
+    return setmetatable(self, {
+      __call = function (self, table)
+        return call(table)
+      end,
+      __newindex = fallback,
+      __metatable = false
+    })
+  end
+  )(
+  object, Object,
+  function (proto)
+    proto = checkSelf(proto)
+    return extends({__self = proto, __proto = proto}, Object)
+  end
+)
+
+return object
