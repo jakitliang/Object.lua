@@ -65,7 +65,7 @@ And check `d` is a `Derived` and also has ancestor `Base`.
 ```lua
 local object = require('object')
 local Base = {}
-Base = object(Derived):class()
+Base = object(Base):class()
 
 local b = object(Base):new()
 

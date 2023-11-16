@@ -63,7 +63,7 @@ Lua 社区中有很多 OO 模块。
 ```lua
 local object = require('object')
 local Base = {}
-Base = object(Derived):class()
+Base = object(Base):class()
 
 local b = object(Base):new()
 
