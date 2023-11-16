@@ -229,7 +229,7 @@ end
 主要是某种很独特的场景可能用得到，一般用不到。
 
 ```lua
-local Base = {attribute = 123}
+local Base = object({attribute = 123}):class()
 
 object(Base):setWeak('kv')
 

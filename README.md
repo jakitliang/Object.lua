@@ -225,7 +225,7 @@ end
 Weak tables can automatically GC the member.
 
 ```lua
-local Base = {attribute = 123}
+local Base = object({attribute = 123}):class()
 
 object(Base):setWeak('kv')
 
